@@ -1,0 +1,20 @@
+[project]
+name = "conscious-ai"
+version = "0.1.0"
+description = "Local autonomous DeepSeek agent experiment with persistent state and state diffs."
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+sensors = ["psutil>=5.9", "sounddevice>=0.4", "numpy>=1.24"]
+
+[project.scripts]
+conscious-ai = "conscious_ai.main:main"
+conscious-ai-dashboard = "conscious_ai.dashboard:run"
+conscious-ai-analyze = "conscious_ai.analyze:main"
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
