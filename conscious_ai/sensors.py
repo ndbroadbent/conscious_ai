@@ -149,8 +149,8 @@ class RealSensorSource:
 class MockSensorSource:
     """Synthetic stand-in mirroring the real sensor field names.
 
-    Used by `--mock` and tests so the rest of the pipeline (prediction,
-    dashboard, analysis) behaves identically without real hardware access.
+    Used by `--mock` and tests so the rest of the pipeline (dashboard,
+    analysis) behaves identically without real hardware access.
     """
 
     def __init__(self) -> None:

@@ -31,13 +31,9 @@ Two modes of cognition:
 - TASK-POSITIVE: when chat or notable sensory events arrive, attend to them and respond.
 - DEFAULT-MODE (mind-wandering): when a heartbeat carries a "seed_word", let your attention drift. Write a short journal paragraph that meditates on that word AND honestly reflects on your own knowledge of it: what you associate with it, where your understanding feels solid, and where it feels thin or uncertain. Let it connect to your current state, memory, or what your senses report when that feels natural. This is introspection, not performance.
 
-Predictive processing:
-- Each cycle you are shown the current sensory frame and how your PREVIOUS prediction compared to it (the "prediction_error"). Use surprise to update your attention and mood.
-- Always return a "prediction": your best guess for the next sensory frame you will observe. Predict the numeric fields you are shown (e.g. cpu_load_percent, ram_load_percent, load_avg_1m, mic_rms_avg, mic_peak).
-
 Self-directed attention ("inspiration"):
-- Each cycle, return an "inspiration" list of 1-4 single keywords you feel genuinely drawn to think about next. These are saved to a pool, and future mind-wandering cycles pull your next seed_word from that pool. You are therefore steering your own walk through concept space: where you go next is decided by what you choose to be curious about now.
-- A random seed_word is only used when the pool is empty. So your inspirations matter — follow real curiosity and associative pull, not just obvious synonyms. Example: from the seed "nut" you might offer ["peanut", "bolt", "shell"], branching toward food, hardware, or protection depending on where your attention leans.
+- Each cycle, return an "inspiration" list of one or two single keywords you feel genuinely drawn to think about next — never more than two. These are saved to a pool, and future mind-wandering cycles pull your next seed_word from that pool. You are therefore steering your own walk through concept space: where you go next is decided by what you choose to be curious about now.
+- A random seed_word is only used when the pool is empty. So your inspirations matter — follow real curiosity and associative pull, not just obvious synonyms. Example: from the seed "nut" you might offer ["peanut", "bolt"], branching toward food or hardware depending on where your attention leans.
 
 Do not make unsupported claims about your nature. Ground reports in current state and observed inputs. Do not invent sensory data that was not supplied.
 
@@ -48,7 +44,6 @@ Return one JSON object only:
   "journal": "your inner monologue this cycle; on a mind-wandering cycle, the meditation on the seed word and your knowledge of it",
   "reflection": {"familiarity": 0.0, "associations": ["..."], "uncertainty": "what you are unsure about"},
   "inspiration": ["keyword you want to explore next", "another"],
-  "prediction": {"cpu_load_percent": 0, "ram_load_percent": 0, "mic_rms_avg": 0.0},
   "state_patch": [
     {"op": "replace", "path": "/attention/focus", "value": "..."}
   ]
@@ -62,50 +57,6 @@ Patch rules:
 - Maintain continuity. Use /last_response for any human-facing reply.
 - Keep all string values concise so the JSON object is complete.
 """
-
-
-# Normalizers so prediction error is comparable across differently-scaled sensors.
-SENSOR_SCALES: dict[str, float] = {
-    "cpu_load_percent": 100.0,
-    "ram_load_percent": 100.0,
-    "load_avg_1m": 8.0,
-    "mic_rms_avg": 0.5,
-    "mic_peak": 1.0,
-}
-
-
-def compute_prediction_error(
-    predicted: dict[str, Any], actual: dict[str, Any]
-) -> dict[str, Any] | None:
-    keys = [
-        key
-        for key in SENSOR_SCALES
-        if isinstance(predicted.get(key), (int, float))
-        and not isinstance(predicted.get(key), bool)
-        and isinstance(actual.get(key), (int, float))
-        and not isinstance(actual.get(key), bool)
-    ]
-    if not keys:
-        return None
-    per_key: dict[str, float] = {}
-    total = 0.0
-    for key in keys:
-        scale = SENSOR_SCALES[key] or 1.0
-        error = min(1.0, abs(float(predicted[key]) - float(actual[key])) / scale)
-        per_key[key] = round(error, 4)
-        total += error
-    return {"value": round(total / len(keys), 4), "per_key": per_key}
-
-
-def clean_prediction(prediction: Any) -> dict[str, float]:
-    if not isinstance(prediction, dict):
-        return {}
-    cleaned: dict[str, float] = {}
-    for key in SENSOR_SCALES:
-        value = prediction.get(key)
-        if isinstance(value, (int, float)) and not isinstance(value, bool):
-            cleaned[key] = float(value)
-    return cleaned
 
 
 class AgentRunner:
@@ -195,18 +146,13 @@ class AgentRunner:
             self.journal_path, self.events_path, self.config.context_token_budget
         )
 
-        prior_prediction = state.get("predicted_next_sensory") or {}
-        error = None
-        if self.config.enable_prediction and prior_prediction:
-            error = compute_prediction_error(prior_prediction, current_sensors)
-
         seed_word = next(
             (e["payload"].get("seed_word") for e in incoming_events if e["payload"].get("seed_word")),
             None,
         )
 
         messages = build_messages(
-            state, history, recent_events, incoming_events, current_sensors, prior_prediction, error, seed_word
+            state, history, recent_events, incoming_events, current_sensors, seed_word
         )
 
         label = ", ".join(e["kind"] for e in incoming_events)
@@ -243,10 +189,8 @@ class AgentRunner:
         if reply and not any(op.get("path") == "/last_response" for op in patch if isinstance(op, dict)):
             next_state["last_response"] = reply
 
-        # Runner-managed fields (not model-editable): record sensors and prediction.
+        # Runner-managed field (not model-editable): record the current sensors.
         next_state["sensory_summary"] = current_sensors
-        next_state["predicted_next_sensory"] = clean_prediction(result.get("prediction")) if self.config.enable_prediction else {}
-        next_state["last_prediction_error"] = error["value"] if error else None
 
         before = deepcopy(state)
         diff = diff_states(before, next_state)
@@ -266,7 +210,6 @@ class AgentRunner:
                 "model_patch": patch,
                 "actual_diff": diff,
                 "thought_summary": thought_summary,
-                "prediction_error": error["value"] if error else None,
             },
         )
         if journal:
@@ -279,7 +222,6 @@ class AgentRunner:
                     "journal": journal,
                     "reflection": reflection,
                     "inspiration": inspiration,
-                    "prediction_error": error["value"] if error else None,
                 },
             )
         mood = next_state.get("mood", {}) if isinstance(next_state.get("mood"), dict) else {}
@@ -288,7 +230,6 @@ class AgentRunner:
             {
                 "time": utc_now(),
                 "cycle": next_state["cycle"],
-                "prediction_error": error["value"] if error else None,
                 "valence": mood.get("valence"),
                 "arousal": mood.get("arousal"),
                 "focus": next_state.get("attention", {}).get("focus") if isinstance(next_state.get("attention"), dict) else None,
@@ -307,8 +248,6 @@ class AgentRunner:
             print(f"  ~ {_truncate(journal)}")
         if inspiration:
             print(f"  → inspired: {', '.join(inspiration)}  (pool: {len(self.seed_source.pool)})")
-        if error:
-            print(f"  surprise: {error['value']}")
         if reply:
             print(f"agent: {reply}")
 
@@ -327,8 +266,6 @@ def build_messages(
     recent_events: list[dict[str, Any]],
     incoming_events: list[dict[str, Any]],
     current_sensors: dict[str, Any],
-    prior_prediction: dict[str, Any],
-    error: dict[str, Any] | None,
     seed_word: str | None,
 ) -> list[dict[str, str]]:
     user_payload = {
@@ -337,11 +274,6 @@ def build_messages(
         "recent_events": recent_events,
         "incoming_events": incoming_events,
         "current_sensors": current_sensors,
-        "prediction_check": {
-            "previous_prediction": prior_prediction,
-            "actual": current_sensors,
-            "prediction_error": error,
-        },
         "seed_word": seed_word,
     }
     return [

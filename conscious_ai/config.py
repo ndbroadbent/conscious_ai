@@ -39,7 +39,6 @@ class Config:
     timeout_seconds: float = 60.0
     enable_mic: bool = True
     mic_window_seconds: float = 3.0
-    enable_prediction: bool = True
     seed_word_file: str | None = None
     seed_novelty_rate: float = 0.0
     dashboard_port: int = 8765
@@ -64,7 +63,6 @@ def load_config() -> Config:
         timeout_seconds=float(os.environ.get("DEEPSEEK_TIMEOUT_SECONDS", "60")),
         enable_mic=_env_bool("ENABLE_MIC", True),
         mic_window_seconds=float(os.environ.get("MIC_WINDOW_SECONDS", "3")),
-        enable_prediction=_env_bool("ENABLE_PREDICTION", True),
         seed_word_file=os.environ.get("SEED_WORD_FILE") or None,
         seed_novelty_rate=float(os.environ.get("SEED_NOVELTY_RATE", "0.0")),
         dashboard_port=int(os.environ.get("DASHBOARD_PORT", "8765")),

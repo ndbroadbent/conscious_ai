@@ -67,7 +67,7 @@ class SeedSource:
         rng: random.Random | None = None,
         pool_path: str | Path | None = None,
         novelty_rate: float = 0.0,
-        max_pool: int = 200,
+        max_pool: int = 30,
     ) -> None:
         loaded: list[str] | None = None
         if word_file:
@@ -102,14 +102,20 @@ class SeedSource:
         self.pool_path.parent.mkdir(parents=True, exist_ok=True)
         self.pool_path.write_text(json.dumps(self.pool, ensure_ascii=False), encoding="utf-8")
 
-    def add_inspiration(self, words: Any) -> list[str]:
-        """Add agent-proposed keywords to the pool. Returns the ones accepted."""
+    def add_inspiration(self, words: Any, max_per_call: int = 2) -> list[str]:
+        """Add agent-proposed keywords to the pool. Returns the ones accepted.
+
+        Accepts at most `max_per_call` new keywords per cycle as a backstop, even
+        if the model returns more than the prompt asks for.
+        """
         if isinstance(words, str):
             words = [words]
         if not isinstance(words, (list, tuple)):
             return []
         added: list[str] = []
         for raw in words:
+            if len(added) >= max_per_call:
+                break
             word = normalize_word(raw)
             if not word or len(word) > 40 or len(word.split()) > 3:
                 continue
@@ -118,6 +124,8 @@ class SeedSource:
             self.pool.append(word)
             added.append(word)
         if len(self.pool) > self.max_pool:
+            # Pool is ordered oldest -> newest; evict the oldest (front) so the
+            # newest max_pool inspirations survive.
             self.pool = self.pool[-self.max_pool :]
         if added:
             self._save_pool()

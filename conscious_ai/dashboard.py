@@ -66,16 +66,11 @@ PAGE = """<!doctype html>
     <div class="mood">
       <div><div class="big" id="valence">0</div><div class="lbl">valence</div></div>
       <div><div class="big" id="arousal">0</div><div class="lbl">arousal</div></div>
-      <div><div class="big" id="surprise">—</div><div class="lbl">surprise</div></div>
     </div>
   </section>
   <section class="card">
     <h2>Senses (laptop body)</h2>
     <div class="gauges" id="gauges"></div>
-  </section>
-  <section class="card">
-    <h2>Prediction error</h2>
-    <svg id="errchart" viewBox="0 0 300 60" preserveAspectRatio="none"></svg>
   </section>
   <section class="card">
     <h2>Valence over time</h2>
@@ -121,8 +116,6 @@ async function tick() {
   document.getElementById("cycle").textContent = "cycle " + (st.cycle ?? 0);
   document.getElementById("valence").textContent = (mood.valence ?? 0).toFixed ? (mood.valence ?? 0).toFixed(2) : mood.valence;
   document.getElementById("arousal").textContent = (mood.arousal ?? 0).toFixed ? (mood.arousal ?? 0).toFixed(2) : mood.arousal;
-  const err = st.last_prediction_error;
-  document.getElementById("surprise").textContent = (err === null || err === undefined) ? "—" : err.toFixed(2);
 
   const sens = st.sensory_summary || {};
   document.getElementById("gauges").innerHTML = GAUGES.map(([k, lbl, max]) => {
@@ -134,7 +127,6 @@ async function tick() {
            '</span><div class="bar"><i style="width:' + pct + '%"></i></div></div>';
   }).join("") || '<div class="empty">no sensors</div>';
 
-  spark("errchart", (s.metrics || []).map(m => m.prediction_error), "#f85149", 0, 1);
   spark("valchart", (s.metrics || []).map(m => m.valence), "#3fb950", -1, 1);
 
   const pool = s.pool || [];
@@ -154,7 +146,6 @@ async function tick() {
       ? '<div class="insp">→ inspired: ' + e.inspiration.map(escapeHtml).join(", ") + '</div>' : "";
     return '<div class="entry"><div class="meta">cycle ' + e.cycle +
       (e.seed_word ? ' · seed <span class="seed">' + e.seed_word + '</span>' : "") +
-      (e.prediction_error != null ? ' · surprise ' + e.prediction_error : "") +
       '</div><div class="body">' + escapeHtml(e.journal) + '</div>' + refl + insp + '</div>';
   }).join("") : '<div class="empty">waiting for the loop to think…</div>';
 }

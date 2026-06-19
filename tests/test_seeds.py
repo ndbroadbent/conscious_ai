@@ -31,12 +31,24 @@ class SeedTests(unittest.TestCase):
 
     def test_inspiration_pool_is_preferred_and_consumed(self) -> None:
         source = SeedSource(rng=random.Random(0), novelty_rate=0.0)
-        added = source.add_inspiration(["Peanut", "bolt", "peanut", "  ", "shell"])
-        self.assertEqual(added, ["peanut", "bolt", "shell"])  # normalized + deduped
+        added = source.add_inspiration(["Peanut", "bolt", "shell"])
+        self.assertEqual(added, ["peanut", "bolt"])  # normalized + capped at two per cycle
         picked = source.next_word()
-        self.assertIn(picked, ["peanut", "bolt", "shell"])
+        self.assertIn(picked, ["peanut", "bolt"])
         self.assertEqual(source.last_source, "inspiration")
         self.assertNotIn(picked, source.pool)  # consumed
+
+    def test_inspiration_capped_at_two_per_cycle(self) -> None:
+        source = SeedSource(rng=random.Random(0))
+        self.assertEqual(source.add_inspiration(["a", "b", "c", "d"]), ["a", "b"])
+
+    def test_pool_evicts_oldest_when_over_max(self) -> None:
+        source = SeedSource(rng=random.Random(0), max_pool=30)
+        for i in range(40):
+            source.add_inspiration([f"word{i}"])  # one per call
+        self.assertEqual(len(source.pool), 30)
+        self.assertEqual(source.pool, [f"word{i}" for i in range(10, 40)])  # newest kept
+        self.assertNotIn("word0", source.pool)  # oldest evicted
 
     def test_random_when_pool_empty(self) -> None:
         source = SeedSource(rng=random.Random(0), novelty_rate=0.0)

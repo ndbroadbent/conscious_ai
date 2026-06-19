@@ -39,8 +39,6 @@ DEFAULT_STATE: dict[str, Any] = {
         }
     ],
     "sensory_summary": {},
-    "predicted_next_sensory": {},
-    "last_prediction_error": None,
     "last_response": "",
 }
 

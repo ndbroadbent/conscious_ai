@@ -30,17 +30,6 @@ def summarize(data_dir: Path) -> str:
         lines.append("(no metrics yet — run the loop first)")
         return "\n".join(lines)
 
-    errors = _nums(metrics, "prediction_error")
-    if len(errors) >= 4:
-        half = len(errors) // 2
-        first, second = mean(errors[:half]), mean(errors[half:])
-        trend = "falling ↓ (learning)" if second < first - 0.01 else "rising ↑" if second > first + 0.01 else "flat →"
-        lines.append(
-            f"prediction error: mean {mean(errors):.3f} · first-half {first:.3f} → second-half {second:.3f}  [{trend}]"
-        )
-    elif errors:
-        lines.append(f"prediction error: mean {mean(errors):.3f} (need more cycles for a trend)")
-
     valence = _nums(metrics, "valence")
     arousal = _nums(metrics, "arousal")
     if valence:

@@ -6,7 +6,7 @@ mode, and let it run, what emerges? Consciousness?
 
 Consciousness isn't directly measurable, so rather than assert or deny it,
 the loop instruments what we *can* observe — continuity of identity, self-modeling,
-prediction error, the texture of its mind-wandering — and leaves the interpretation to you.
+the texture of its mind-wandering, the concepts it chooses to chase — and leaves the interpretation to you.
 The code gives the model a body, a default mode, and a measurable inner life:
 
 - a persistent JSON state file (identity, mood, attention, memory, goals)
@@ -17,9 +17,8 @@ The code gives the model a body, a default mode, and a measurable inner life:
   wants to explore; those seed future mind-wandering, so it walks concept space
   in directions it chooses rather than purely at random
 - **real sensory input from your laptop** — cpu load, ram load, system load
-  average, and microphone loudness (RMS average + peak over a window)
-- a **predictive loop**: each cycle the agent predicts its next sensory frame,
-  and the next cycle scores the error as "surprise"
+  average, and microphone loudness (RMS average + peak over a window) — the
+  agent's "body" that it senses and reacts to
 - a **default mode / mind-wandering** behavior: when idle, the agent is given a
   random English word as a seed and meditates on it, reflecting on the limits of
   its own knowledge
@@ -57,7 +56,6 @@ SENSOR_INTERVAL_SECONDS=3      # how often sensors are sampled
 SENSOR_COOLDOWN_SECONDS=8      # min gap between sensor-triggered wakeups (cost control)
 ENABLE_MIC=true
 MIC_WINDOW_SECONDS=3
-ENABLE_PREDICTION=true
 CONTEXT_TOKEN_BUDGET=100000    # episodic memory window resent each cycle
 SEED_WORD_FILE=               # optional: newline-separated word list for seeds
 SEED_NOVELTY_RATE=0.15        # chance of a fresh random seed even when the inspiration pool is full
@@ -95,7 +93,7 @@ python3 -m conscious_ai.dashboard
 ```
 
 A zero-dependency dashboard (stdlib `http.server`) showing the current focus and
-mood, live sensor gauges, the prediction-error and valence sparklines, and the
+mood, live sensor gauges, the valence sparkline, the inspiration pool, and the
 stream of consciousness with each meditation's self-rated familiarity.
 
 ## Analyze a run
@@ -104,9 +102,9 @@ stream of consciousness with each meditation's self-rated familiarity.
 python3 -m conscious_ai.analyze
 ```
 
-Prints summary stats over the logs: prediction-error trend (is surprise
-*falling* — i.e. is it modeling its world?), mood range, wakeup breakdown, and
-recent meditations with average self-rated familiarity.
+Prints summary stats over the logs: the concept walk (distinct inspirations,
+most-revisited keywords, pending pool), mood range, wakeup breakdown, and recent
+meditations with average self-rated familiarity.
 
 ## Data files (under `data/`)
 
@@ -114,7 +112,7 @@ recent meditations with average self-rated familiarity.
 - `events.jsonl` — sensory, chat, heartbeat, and model events
 - `diffs.jsonl` — state patches applied per cycle
 - `journal.jsonl` — the inner monologue / meditations + self-reflection + inspiration
-- `metrics.jsonl` — per-cycle prediction error, mood, focus (drives the charts)
+- `metrics.jsonl` — per-cycle mood, focus, trigger (drives the charts)
 - `inspiration.json` — the pool of keywords it chose to explore next (its concept walk)
 
 ## Tests
