@@ -12,6 +12,7 @@ class DeepSeekClient:
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.timeout_seconds = timeout_seconds
+        self.last_usage: dict[str, Any] | None = None
 
     def complete_json(self, messages: list[dict[str, str]]) -> dict[str, Any]:
         payload = {
@@ -38,6 +39,7 @@ class DeepSeekClient:
             raise RuntimeError(f"DeepSeek API error {error.code}: {detail}") from error
 
         data = json.loads(body)
+        self.last_usage = data.get("usage")
         content = data["choices"][0]["message"]["content"].strip()
         try:
             return json.loads(content)

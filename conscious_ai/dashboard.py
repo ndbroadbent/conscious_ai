@@ -48,6 +48,9 @@ PAGE = """<!doctype html>
   svg { width: 100%; height: 60px; display: block; }
   .empty { color: #6b7682; font-style: italic; }
   .tag { font-size: 11px; color: #6b7682; }
+  .chip { display: inline-block; background: #1b2027; color: #adb6c0; border: 1px solid #28313b;
+          border-radius: 12px; padding: 2px 9px; margin: 2px 5px 2px 0; font-size: 12px; }
+  .entry .insp { color: #d29922; font-size: 12px; margin-top: 4px; }
 </style>
 </head>
 <body>
@@ -77,6 +80,10 @@ PAGE = """<!doctype html>
   <section class="card">
     <h2>Valence over time</h2>
     <svg id="valchart" viewBox="0 0 300 60" preserveAspectRatio="none"></svg>
+  </section>
+  <section class="card" style="grid-column: 1 / -1">
+    <h2>Inspiration pool · the directions it chose for itself</h2>
+    <div id="pool"><span class="empty">none yet — using random seeds</span></div>
   </section>
   <section class="card stream">
     <h2>Stream of consciousness</h2>
@@ -130,6 +137,11 @@ async function tick() {
   spark("errchart", (s.metrics || []).map(m => m.prediction_error), "#f85149", 0, 1);
   spark("valchart", (s.metrics || []).map(m => m.valence), "#3fb950", -1, 1);
 
+  const pool = s.pool || [];
+  document.getElementById("pool").innerHTML = pool.length
+    ? pool.map(w => '<span class="chip">' + escapeHtml(w) + '</span>').join("")
+    : '<span class="empty">none yet — using random seeds</span>';
+
   const j = s.journal || [];
   document.getElementById("journal").innerHTML = j.length ? j.slice().reverse().map(e => {
     const r = e.reflection || {};
@@ -138,10 +150,12 @@ async function tick() {
         (r.associations && r.associations.length ? " · " + r.associations.join(", ") : "") +
         (r.uncertainty ? " · unsure: " + r.uncertainty : "") + '</div>'
       : "";
+    const insp = (e.inspiration && e.inspiration.length)
+      ? '<div class="insp">→ inspired: ' + e.inspiration.map(escapeHtml).join(", ") + '</div>' : "";
     return '<div class="entry"><div class="meta">cycle ' + e.cycle +
       (e.seed_word ? ' · seed <span class="seed">' + e.seed_word + '</span>' : "") +
       (e.prediction_error != null ? ' · surprise ' + e.prediction_error : "") +
-      '</div><div class="body">' + escapeHtml(e.journal) + '</div>' + refl + '</div>';
+      '</div><div class="body">' + escapeHtml(e.journal) + '</div>' + refl + insp + '</div>';
   }).join("") : '<div class="empty">waiting for the loop to think…</div>';
 }
 function escapeHtml(s) { const d = document.createElement("div"); d.textContent = s || ""; return d.innerHTML; }
@@ -181,8 +195,18 @@ class _Handler(BaseHTTPRequestHandler):
                 state = json.loads(state_path.read_text(encoding="utf-8"))
             except Exception:
                 state = {}
+        pool: list[Any] = []
+        pool_path = self.data_dir / "inspiration.json"
+        if pool_path.exists():
+            try:
+                loaded = json.loads(pool_path.read_text(encoding="utf-8"))
+                if isinstance(loaded, list):
+                    pool = loaded
+            except Exception:
+                pool = []
         return {
             "state": state,
+            "pool": pool,
             "journal": read_recent_jsonl(self.data_dir / "journal.jsonl", 30),
             "metrics": read_recent_jsonl(self.data_dir / "metrics.jsonl", 120),
         }

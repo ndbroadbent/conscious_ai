@@ -11,6 +11,11 @@ The code gives the model a body, a default mode, and a measurable inner life:
 
 - a persistent JSON state file (identity, mood, attention, memory, goals)
 - an append-only event log, diff log, journal, and metrics log
+- a **rolling episodic memory**: its own past thoughts + the conversation, fed
+  back each cycle up to a ~100k-token budget (oldest trimmed) — real continuity
+- **self-directed attention**: each cycle it emits "inspiration" keywords it
+  wants to explore; those seed future mind-wandering, so it walks concept space
+  in directions it chooses rather than purely at random
 - **real sensory input from your laptop** — cpu load, ram load, system load
   average, and microphone loudness (RMS average + peak over a window)
 - a **predictive loop**: each cycle the agent predicts its next sensory frame,
@@ -53,7 +58,9 @@ SENSOR_COOLDOWN_SECONDS=8      # min gap between sensor-triggered wakeups (cost 
 ENABLE_MIC=true
 MIC_WINDOW_SECONDS=3
 ENABLE_PREDICTION=true
+CONTEXT_TOKEN_BUDGET=100000    # episodic memory window resent each cycle
 SEED_WORD_FILE=               # optional: newline-separated word list for seeds
+SEED_NOVELTY_RATE=0.15        # chance of a fresh random seed even when the inspiration pool is full
 DASHBOARD_PORT=8765
 DATA_DIR=data
 ```
@@ -69,8 +76,10 @@ python3 -m conscious_ai --mock          # synthetic sensors, no hardware/mic nee
 Type messages and press Enter to talk to it. The agent also wakes on its own and
 mind-wanders on a seed word; loud noise or a CPU spike can wake it earlier.
 
-> Cost note: this is an always-on loop making one model call per wakeup. The
-> defaults aim for a sane cadence; raise the intervals to spend less.
+> Cost note: this is an always-on loop making one model call per wakeup, and
+> each wakeup resends the episodic memory (up to ~`CONTEXT_TOKEN_BUDGET` tokens),
+> so input cost grows as memory fills. Lower the budget or raise the intervals to
+> spend less.
 
 Useful commands while running:
 
@@ -104,8 +113,9 @@ recent meditations with average self-rated familiarity.
 - `state.json` — current agent state
 - `events.jsonl` — sensory, chat, heartbeat, and model events
 - `diffs.jsonl` — state patches applied per cycle
-- `journal.jsonl` — the inner monologue / meditations + self-reflection
+- `journal.jsonl` — the inner monologue / meditations + self-reflection + inspiration
 - `metrics.jsonl` — per-cycle prediction error, mood, focus (drives the charts)
+- `inspiration.json` — the pool of keywords it chose to explore next (its concept walk)
 
 ## Tests
 

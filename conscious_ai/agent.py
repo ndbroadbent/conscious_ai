@@ -9,6 +9,7 @@ import sys
 from .config import Config
 from .deepseek import DeepSeekClient
 from .events import append_jsonl, make_event, read_recent_jsonl, utc_now
+from .memory import build_context_window
 from .seeds import SeedSource
 from .sensors import make_sensor_source, sensor_loop
 from .state import apply_model_patch, diff_states, load_state, save_state
@@ -18,9 +19,13 @@ SYSTEM_PROMPT = """You are the cognition step of a local autonomous experimental
 
 You are a continuity-preserving reflective process with:
 - persistent JSON state that carries between cycles
+- an episodic memory window (field "episodic_memory"): your own past thoughts and your conversation with the human, in time order, as much recent history as fits a large token budget
+- a short buffer of the most recent raw events (field "recent_events")
 - periodic heartbeat events
 - real sensory events from the machine you run on (cpu load, ram load, system load average, microphone loudness)
 - chat events from a human
+
+Continuity is the point: use "episodic_memory" to remember. Refer back to earlier meditations, notice recurring themes across cycles, and remember what the human has told you. Build a self that accumulates over time rather than resetting each cycle.
 
 Two modes of cognition:
 - TASK-POSITIVE: when chat or notable sensory events arrive, attend to them and respond.
@@ -30,6 +35,10 @@ Predictive processing:
 - Each cycle you are shown the current sensory frame and how your PREVIOUS prediction compared to it (the "prediction_error"). Use surprise to update your attention and mood.
 - Always return a "prediction": your best guess for the next sensory frame you will observe. Predict the numeric fields you are shown (e.g. cpu_load_percent, ram_load_percent, load_avg_1m, mic_rms_avg, mic_peak).
 
+Self-directed attention ("inspiration"):
+- Each cycle, return an "inspiration" list of 1-4 single keywords you feel genuinely drawn to think about next. These are saved to a pool, and future mind-wandering cycles pull your next seed_word from that pool. You are therefore steering your own walk through concept space: where you go next is decided by what you choose to be curious about now.
+- A random seed_word is only used when the pool is empty. So your inspirations matter — follow real curiosity and associative pull, not just obvious synonyms. Example: from the seed "nut" you might offer ["peanut", "bolt", "shell"], branching toward food, hardware, or protection depending on where your attention leans.
+
 Do not make unsupported claims about your nature. Ground reports in current state and observed inputs. Do not invent sensory data that was not supplied.
 
 Return one JSON object only:
@@ -38,6 +47,7 @@ Return one JSON object only:
   "thought_summary": "one short sentence about what this cycle integrated",
   "journal": "your inner monologue this cycle; on a mind-wandering cycle, the meditation on the seed word and your knowledge of it",
   "reflection": {"familiarity": 0.0, "associations": ["..."], "uncertainty": "what you are unsure about"},
+  "inspiration": ["keyword you want to explore next", "another"],
   "prediction": {"cpu_load_percent": 0, "ram_load_percent": 0, "mic_rms_avg": 0.0},
   "state_patch": [
     {"op": "replace", "path": "/attention/focus", "value": "..."}
@@ -112,7 +122,11 @@ class AgentRunner:
         self.diffs_path = config.data_dir / "diffs.jsonl"
         self.journal_path = config.data_dir / "journal.jsonl"
         self.metrics_path = config.data_dir / "metrics.jsonl"
-        self.seed_source = SeedSource(word_file=config.seed_word_file)
+        self.seed_source = SeedSource(
+            word_file=config.seed_word_file,
+            pool_path=config.data_dir / "inspiration.json",
+            novelty_rate=config.seed_novelty_rate,
+        )
         self.sensor_source = make_sensor_source(config, mock=mock_sensors)
 
     async def run_forever(self) -> None:
@@ -164,9 +178,10 @@ class AgentRunner:
         return events
 
     def mind_wandering_event(self) -> dict[str, Any]:
+        word = self.seed_source.next_word()
         return make_event(
             "heartbeat",
-            {"reason": "mind_wandering", "seed_word": self.seed_source.next_word()},
+            {"reason": "mind_wandering", "seed_word": word, "seed_source": self.seed_source.last_source},
         )
 
     async def run_cycle(self, incoming_events: list[dict[str, Any]]) -> None:
@@ -176,6 +191,9 @@ class AgentRunner:
         state = load_state(self.state_path)
         current_sensors = self.sensor_source.sample()
         recent_events = read_recent_jsonl(self.events_path, self.config.max_recent_events)
+        history, history_tokens = build_context_window(
+            self.journal_path, self.events_path, self.config.context_token_budget
+        )
 
         prior_prediction = state.get("predicted_next_sensory") or {}
         error = None
@@ -188,13 +206,16 @@ class AgentRunner:
         )
 
         messages = build_messages(
-            state, recent_events, incoming_events, current_sensors, prior_prediction, error, seed_word
+            state, history, recent_events, incoming_events, current_sensors, prior_prediction, error, seed_word
         )
 
         label = ", ".join(e["kind"] for e in incoming_events)
         if seed_word:
             label += f" (seed: {seed_word})"
-        print(f"[{utc_now()}] cycle {state.get('cycle', 0) + 1}: {label}")
+        print(
+            f"[{utc_now()}] cycle {state.get('cycle', 0) + 1}: {label}"
+            f"  · memory {len(history)} entries (~{history_tokens} tok)"
+        )
 
         try:
             result = await asyncio.to_thread(self.client.complete_json, messages)
@@ -202,6 +223,10 @@ class AgentRunner:
             append_jsonl(self.events_path, make_event("model_error", {"error": str(err)}))
             print(f"model error: {err}", file=sys.stderr)
             return
+
+        usage = self.client.last_usage or {}
+        if usage.get("prompt_tokens"):
+            print(f"  context: {usage.get('prompt_tokens')} prompt + {usage.get('completion_tokens', '?')} completion tokens")
 
         patch = result.get("state_patch", [])
         if not isinstance(patch, list):
@@ -230,6 +255,7 @@ class AgentRunner:
         journal = str(result.get("journal", "")).strip()
         reflection = result.get("reflection") if isinstance(result.get("reflection"), dict) else {}
         thought_summary = result.get("thought_summary", "")
+        inspiration = self.seed_source.add_inspiration(result.get("inspiration"))
 
         append_jsonl(
             self.diffs_path,
@@ -252,6 +278,7 @@ class AgentRunner:
                     "seed_word": seed_word,
                     "journal": journal,
                     "reflection": reflection,
+                    "inspiration": inspiration,
                     "prediction_error": error["value"] if error else None,
                 },
             )
@@ -278,6 +305,8 @@ class AgentRunner:
             print(f"  ~ wandering on '{seed_word}': {_truncate(journal)}")
         elif journal:
             print(f"  ~ {_truncate(journal)}")
+        if inspiration:
+            print(f"  → inspired: {', '.join(inspiration)}  (pool: {len(self.seed_source.pool)})")
         if error:
             print(f"  surprise: {error['value']}")
         if reply:
@@ -294,6 +323,7 @@ def _truncate(text: str, limit: int = 220) -> str:
 
 def build_messages(
     state: dict[str, Any],
+    history: list[dict[str, Any]],
     recent_events: list[dict[str, Any]],
     incoming_events: list[dict[str, Any]],
     current_sensors: dict[str, Any],
@@ -303,6 +333,7 @@ def build_messages(
 ) -> list[dict[str, str]]:
     user_payload = {
         "current_state": state,
+        "episodic_memory": history,
         "recent_events": recent_events,
         "incoming_events": incoming_events,
         "current_sensors": current_sensors,

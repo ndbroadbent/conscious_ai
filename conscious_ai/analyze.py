@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import json
+from collections import Counter
 from pathlib import Path
 from statistics import mean
 from typing import Any
@@ -60,6 +62,26 @@ def summarize(data_dir: Path) -> str:
     fams = [f for f in fams if isinstance(f, (int, float)) and not isinstance(f, bool)]
     if fams:
         lines.append(f"avg self-rated familiarity with seed words: {mean(fams):.2f}")
+
+    all_inspiration: list[str] = []
+    for entry in journal:
+        ins = entry.get("inspiration")
+        if isinstance(ins, list):
+            all_inspiration.extend(str(w) for w in ins)
+    if all_inspiration:
+        counts = Counter(all_inspiration)
+        lines.append(f"concept walk: {len(all_inspiration)} inspirations across {len(counts)} distinct keywords")
+        revisited = ", ".join(f"{w}×{c}" for w, c in counts.most_common(5) if c > 1)
+        if revisited:
+            lines.append(f"  most revisited: {revisited}")
+    pool_path = data_dir / "inspiration.json"
+    if pool_path.exists():
+        try:
+            pool = json.loads(pool_path.read_text(encoding="utf-8"))
+            if isinstance(pool, list) and pool:
+                lines.append(f"  pending pool: {len(pool)} words (next likely: {', '.join(map(str, pool[-6:]))})")
+        except Exception:
+            pass
 
     if meditations:
         lines.append("\nrecent meditations:")

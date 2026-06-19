@@ -35,11 +35,13 @@ class Config:
     sensor_interval_seconds: float = 3.0
     sensor_cooldown_seconds: float = 8.0
     max_recent_events: int = 24
+    context_token_budget: int = 100_000
     timeout_seconds: float = 60.0
     enable_mic: bool = True
     mic_window_seconds: float = 3.0
     enable_prediction: bool = True
     seed_word_file: str | None = None
+    seed_novelty_rate: float = 0.0
     dashboard_port: int = 8765
 
 
@@ -58,10 +60,12 @@ def load_config() -> Config:
         sensor_interval_seconds=float(os.environ.get("SENSOR_INTERVAL_SECONDS", "3")),
         sensor_cooldown_seconds=float(os.environ.get("SENSOR_COOLDOWN_SECONDS", "8")),
         max_recent_events=int(os.environ.get("MAX_RECENT_EVENTS", "24")),
+        context_token_budget=int(os.environ.get("CONTEXT_TOKEN_BUDGET", "100000")),
         timeout_seconds=float(os.environ.get("DEEPSEEK_TIMEOUT_SECONDS", "60")),
         enable_mic=_env_bool("ENABLE_MIC", True),
         mic_window_seconds=float(os.environ.get("MIC_WINDOW_SECONDS", "3")),
         enable_prediction=_env_bool("ENABLE_PREDICTION", True),
         seed_word_file=os.environ.get("SEED_WORD_FILE") or None,
+        seed_novelty_rate=float(os.environ.get("SEED_NOVELTY_RATE", "0.0")),
         dashboard_port=int(os.environ.get("DASHBOARD_PORT", "8765")),
     )

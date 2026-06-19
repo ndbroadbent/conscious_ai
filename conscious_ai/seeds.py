@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import json
 import random
 from collections import deque
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable
 
 
 # Curated, evocative, mostly-concrete common English words. A good seed is
@@ -44,8 +45,19 @@ DEFAULT_WORDS: list[str] = [
 ]
 
 
+def normalize_word(word: Any) -> str:
+    return str(word).strip().lower()
+
+
 class SeedSource:
-    """Supplies random word seeds for default-mode (mind-wandering) cycles."""
+    """Supplies word seeds for default-mode (mind-wandering) cycles.
+
+    Two sources feed the seeds: a fixed list of evocative words, and a growing
+    pool of "inspiration" keywords the agent itself proposes. By default the
+    agent always follows its own pool (steering its walk through concept space),
+    falling back to a random word only when the pool is empty. An optional
+    `novelty_rate` > 0 injects fresh random words even when the pool is full.
+    """
 
     def __init__(
         self,
@@ -53,6 +65,9 @@ class SeedSource:
         avoid_recent: int = 40,
         word_file: str | None = None,
         rng: random.Random | None = None,
+        pool_path: str | Path | None = None,
+        novelty_rate: float = 0.0,
+        max_pool: int = 200,
     ) -> None:
         loaded: list[str] | None = None
         if word_file:
@@ -65,9 +80,62 @@ class SeedSource:
         window = min(avoid_recent, max(1, len(self.words) - 1))
         self.recent: deque[str] = deque(maxlen=window)
         self.rng = rng or random.Random()
+        self.pool_path = Path(pool_path) if pool_path else None
+        self.novelty_rate = novelty_rate
+        self.max_pool = max_pool
+        self.pool: list[str] = self._load_pool()
+        self.last_source: str = "random"
+
+    def _load_pool(self) -> list[str]:
+        if self.pool_path and self.pool_path.exists():
+            try:
+                data = json.loads(self.pool_path.read_text(encoding="utf-8"))
+                if isinstance(data, list):
+                    return list(dict.fromkeys(normalize_word(w) for w in data if normalize_word(w)))
+            except Exception:
+                return []
+        return []
+
+    def _save_pool(self) -> None:
+        if self.pool_path is None:
+            return
+        self.pool_path.parent.mkdir(parents=True, exist_ok=True)
+        self.pool_path.write_text(json.dumps(self.pool, ensure_ascii=False), encoding="utf-8")
+
+    def add_inspiration(self, words: Any) -> list[str]:
+        """Add agent-proposed keywords to the pool. Returns the ones accepted."""
+        if isinstance(words, str):
+            words = [words]
+        if not isinstance(words, (list, tuple)):
+            return []
+        added: list[str] = []
+        for raw in words:
+            word = normalize_word(raw)
+            if not word or len(word) > 40 or len(word.split()) > 3:
+                continue
+            if word in self.pool or word in self.recent:
+                continue
+            self.pool.append(word)
+            added.append(word)
+        if len(self.pool) > self.max_pool:
+            self.pool = self.pool[-self.max_pool :]
+        if added:
+            self._save_pool()
+        return added
 
     def next_word(self) -> str:
-        choices = [w for w in self.words if w not in self.recent] or self.words
-        word = self.rng.choice(choices)
+        if self.pool and self.rng.random() >= self.novelty_rate:
+            candidates = [w for w in self.pool if w not in self.recent] or self.pool
+            word = self.rng.choice(candidates)
+            try:
+                self.pool.remove(word)  # consume so the walk moves forward
+            except ValueError:
+                pass
+            self._save_pool()
+            self.last_source = "inspiration"
+        else:
+            choices = [w for w in self.words if w not in self.recent] or self.words
+            word = self.rng.choice(choices)
+            self.last_source = "random"
         self.recent.append(word)
         return word
